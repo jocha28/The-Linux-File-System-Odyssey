@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Linux File-System Odyssey</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000010;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      color: #00ff88;
+    }
+
+    /* ── 3D Canvas ── */
+    #canvas-container {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: calc(100vh - 200px);
+    }
+
+    /* ── HUD top-left ── */
+    #hud {
+      position: fixed;
+      top: 14px; left: 16px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    #hud .title {
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      color: #00ff88;
+      text-shadow: 0 0 8px #00ff88aa;
+    }
+    #hud .subtitle { font-size: 10px; color: #44aa77; margin-top: 1px; }
+    #current-path {
+      font-size: 12px;
+      color: #88ffcc;
+      margin-top: 6px;
+      background: rgba(0,0,0,0.5);
+      padding: 3px 8px;
+      border-left: 2px solid #00ff88;
+    }
+
+    /* ── Tooltip ── */
+    #tooltip {
+      position: fixed;
+      background: rgba(0, 10, 5, 0.92);
+      border: 1px solid #00ff88;
+      color: #ccc;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 1.6;
+      z-index: 20;
+      pointer-events: none;
+      display: none;
+      max-width: 260px;
+    }
+    #tooltip strong { color: #00ff88; }
+
+    /* ── Connection status ── */
+    #connection-status {
+      position: fixed;
+      top: 14px; right: 16px;
+      font-size: 11px;
+      z-index: 10;
+      color: #ff4444;
+      text-shadow: 0 0 6px currentColor;
+    }
+    #connection-status.connected { color: #00ff88; }
+
+    /* ── Legend ── */
+    .legend {
+      position: fixed;
+      bottom: 210px; right: 16px;
+      background: rgba(0, 8, 4, 0.88);
+      border: 1px solid #1a4a2a;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 11px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .legend h4 { color: #00ff88; margin-bottom: 7px; font-size: 11px; letter-spacing: 1px; }
+    .legend-item { display: flex; align-items: center; margin: 4px 0; color: #aaa; }
+    .legend-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      margin-right: 9px;
+      flex-shrink: 0;
+      box-shadow: 0 0 4px currentColor;
+    }
+
+    /* ── Terminal container ── */
+    #terminal-container {
+      position: fixed;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: 200px;
+      background: rgba(0, 0, 0, 0.96);
+      border-top: 1px solid #1a3a2a;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+    }
+    #terminal-header {
+      display: flex;
+      align-items: center;
+      padding: 4px 12px;
+      background: #050f08;
+      border-bottom: 1px solid #1a3a2a;
+      flex-shrink: 0;
+    }
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      margin-right: 5px;
+      cursor: pointer;
+    }
+    .dot.red    { background: #ff5f57; }
+    .dot.yellow { background: #febc2e; }
+    .dot.green  { background: #28c840; }
+    #terminal-header .label {
+      color: #00ff88;
+      font-size: 11px;
+      margin-left: 8px;
+    }
+    #terminal-header .hint {
+      color: #44776a;
+      font-size: 10px;
+      margin-left: auto;
+    }
+    #terminal {
+      flex: 1;
+      overflow: hidden;
+      padding: 2px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="canvas-container"></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="title">Linux File-System Odyssey</div>
+    <div class="subtitle">Explorez le système de fichiers Linux en 3D</div>
+    <div id="current-path">/</div>
+  </div>
+
+  <!-- Tooltip sur hover -->
+  <div id="tooltip"></div>
+
+  <!-- Statut connexion -->
+  <div id="connection-status">● Connexion...</div>
+
+  <!-- Légende des couleurs -->
+  <div class="legend">
+    <h4>PERMISSIONS</h4>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#00ccff;color:#00ccff"></div>Exécutable
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#44ff88;color:#44ff88"></div>Lecture + Écriture
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#ff4444;color:#ff4444"></div>Lecture seule
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#ffaa00;color:#ffaa00"></div>Écriture seule
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#ff00ff;color:#ff00ff"></div>Setuid / Setgid
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#4488ff;color:#4488ff"></div>Dossier
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#ff88aa;color:#ff88aa"></div>Lien symbolique
+    </div>
+  </div>
+
+  <!-- Terminal intégré -->
+  <div id="terminal-container">
+    <div id="terminal-header">
+      <div class="dot red"></div>
+      <div class="dot yellow"></div>
+      <div class="dot green"></div>
+      <span class="label">bash — odyssey terminal</span>
+      <span class="hint">cd, ls, mkdir, chmod... → effet 3D en temps réel</span>
+    </div>
+    <div id="terminal"></div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
